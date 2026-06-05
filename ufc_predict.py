@@ -16,6 +16,15 @@ with col_text:
 
 # 메인 타이틀 및 구분선
 st.title('UFC 백악관 매치 승부 예측 옥타곤')
+
+# 유튜브 영상 자동재생 (최신 브라우저 정책상 mute=1이 있어야 자동재생됨)
+video_html = """
+<div style="display: flex; justify-content: center; margin-bottom: 20px;">
+    <iframe width="100%" height="400" src="https://www.youtube.com/embed/qK7HtIlUNEk?si=uCPaXvxdK_hh6gUX&autoplay=1&mute=1" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</div>
+"""
+st.markdown(video_html, unsafe_allow_html=True)
+
 st.divider()
 
 # 세션 상태(session_state) 초기화: 투표 데이터 누적 관리
