@@ -1,6 +1,9 @@
 import streamlit as st
 import pandas as pd
 import os
+from streamlit_gsheets import GSheetsConnection
+
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1nBaJtEC_80aBiw8O5D59x0DZjK_Ik46n3sr2KswZ51Y/edit?usp=sharing"
 
 # 페이지 설정
 st.set_page_config(page_title="UFC 백악관 매치 승부 예측 옥타곤", page_icon="🥊", layout="centered")
@@ -27,15 +30,8 @@ st.markdown(video_html, unsafe_allow_html=True)
 
 st.divider()
 
-# 세션 상태(session_state) 초기화: 투표 데이터 누적 관리
-if 'votes' not in st.session_state:
-    st.session_state.votes = {
-        'Match 1': {'일리아 토푸리아': 0, '저스틴 게이치': 0},
-        'Match 2': {'알렉스 페레이라': 0, '시릴 간': 0},
-        'Match 3': {'션 오말리': 0, '에이만 자하비': 0},
-        'Match 4': {'조쉬 호킷': 0, '데릭 루이스': 0},
-        'Match 5': {'마우리시오 루피': 0, '마이클 챈들러': 0}
-    }
+# 구글 시트 연결 설정
+conn = st.connection("gsheets", type=GSheetsConnection)
 
 # 매치업 및 이미지 데이터 리스트
 matchups = [
@@ -74,19 +70,58 @@ with st.form(key='prediction_form'):
 
 # 3. 데이터 집계 및 시각화 섹션 (하단)
 if submit_btn:
-    # 폼이 제출되면 선택된 선수의 누적 득표수 업데이트
-    for match in matchups:
-        selected = selections[match['id']]
-        st.session_state.votes[match['id']][selected] += 1
-    st.success("성공적으로 예측이 저장되었습니다!")
+    # 1. 구글 시트 기존 데이터 읽어오기
+    try:
+        existing_data = conn.read(spreadsheet=SHEET_URL, usecols=[0, 1, 2, 3, 4], ttl=0)
+        existing_data = existing_data.dropna(how="all")
+    except Exception:
+        existing_data = pd.DataFrame(columns=["Match 1", "Match 2", "Match 3", "Match 4", "Match 5"])
+        
+    # 시트가 비어있을 때를 대비한 컬럼 설정
+    if existing_data.empty or len(existing_data.columns) < 5:
+        existing_data = pd.DataFrame(columns=["Match 1", "Match 2", "Match 3", "Match 4", "Match 5"])
+
+    # 2. 새로운 투표 데이터 생성
+    new_row = pd.DataFrame([{
+        "Match 1": selections["Match 1"],
+        "Match 2": selections["Match 2"],
+        "Match 3": selections["Match 3"],
+        "Match 4": selections["Match 4"],
+        "Match 5": selections["Match 5"],
+    }])
+    
+    # 3. 기존 데이터에 누적(Append)
+    updated_data = pd.concat([existing_data, new_row], ignore_index=True)
+    
+    # 4. 구글 시트에 업데이트
+    conn.update(spreadsheet=SHEET_URL, data=updated_data)
+    st.success("성공적으로 예측이 구글 시트에 누적 저장되었습니다!")
 
 st.divider()
 st.header('🔥 실시간 팬 승리 예측 비율')
 
+# 전체 누적 데이터 실시간 읽어오기
+try:
+    all_votes_df = conn.read(spreadsheet=SHEET_URL, usecols=[0, 1, 2, 3, 4], ttl=0)
+    all_votes_df = all_votes_df.dropna(how="all")
+except Exception:
+    all_votes_df = pd.DataFrame()
+
 # 5경기에 대한 데이터프레임 생성 및 바 차트 시각화
 for match in matchups:
-    v1 = st.session_state.votes[match['id']][match['f1']]
-    v2 = st.session_state.votes[match['id']][match['f2']]
+    m_id = match['id']
+    f1 = match['f1']
+    f2 = match['f2']
+    
+    # 데이터프레임에서 각 선수의 득표수 집계
+    if not all_votes_df.empty and m_id in all_votes_df.columns:
+        counts = all_votes_df[m_id].value_counts()
+        v1 = counts.get(f1, 0)
+        v2 = counts.get(f2, 0)
+    else:
+        v1 = 0
+        v2 = 0
+        
     total = v1 + v2
     
     # 득표 비율(%) 계산
@@ -99,10 +134,10 @@ for match in matchups:
         
     # Pandas 데이터프레임 생성
     df = pd.DataFrame({
-        "선수": [match['f1'], match['f2']],
+        "선수": [f1, f2],
         "득표 비율(%)": [p1, p2]
     }).set_index("선수")
     
     # 각 경기 이름과 함께 바 차트 나열
-    st.markdown(f"**{match['id']}: {match['f1']} vs {match['f2']}**")
+    st.markdown(f"**{m_id}: {f1} vs {f2}**")
     st.bar_chart(df)
